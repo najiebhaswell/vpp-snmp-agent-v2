@@ -1,0 +1,55 @@
+#!/usr/bin/env python3
+"""
+VPP SNMP Agent V2 - Wrapper script
+Entry point for systemd service
+"""
+
+import sys
+import os
+
+# Add module path for installed version
+sys.path.insert(0, '/usr/share/vpp-snmp-agent')
+
+# Try to run the agent
+try:
+    # Import and run the main agent
+    from snmp_agent_v2 import main
+    main()
+    
+except ImportError as e:
+    import logging
+    logging.basicConfig(level=logging.ERROR)
+    logger = logging.getLogger()
+    logger.error(f"ERROR: Import failed: {e}")
+    sys.exit(1)
+except Exception as e:
+    import logging
+    import traceback
+    logging.basicConfig(level=logging.ERROR)
+    logger = logging.getLogger()
+    logger.error(f"ERROR: {type(e).__name__}: {e}")
+    traceback.print_exc()
+    sys.exit(1)
+    agent.run()
+    
+except ImportError as e:
+    error = str(e)
+    if 'vppapi' in error or 'vpp_papi' in error or 'vppstats' in error or 'pyagentx' in error:
+        print(f"ERROR: Missing required module: {error}", file=sys.stderr)
+        print("Install dependencies with: sudo apt install python3-vpp-api snmpd python3-yaml", file=sys.stderr)
+        sys.exit(1)
+    else:
+        raise
+
+except ConnectionRefusedError:
+    print("ERROR: Cannot connect to snmpd on localhost:705", file=sys.stderr)
+    print("Make sure snmpd is running: sudo systemctl start snmpd", file=sys.stderr)
+    sys.exit(1)
+
+except KeyboardInterrupt:
+    print("\nShutdown signal received, exiting gracefully...", file=sys.stderr)
+    sys.exit(0)
+
+except Exception as e:
+    print(f"ERROR: {type(e).__name__}: {e}", file=sys.stderr)
+    sys.exit(1)
