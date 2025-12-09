@@ -1,0 +1,119 @@
+# VPP SNMP Agent Configuration
+# Usage: snmp_agent_integrated.py -c vpp-snmp-agent-config.yaml
+
+# Interfaces configuration (optional)
+interfaces:
+  GigabitEthernet0/0/0:
+    description: "WAN Link - Primary"
+    enabled: true
+  
+  GigabitEthernet0/0/1:
+    description: "LAN Link - Secondary"
+    enabled: true
+  
+  tap0:
+    description: "Management Interface"
+    enabled: true
+  
+  # Sub-interfaces
+  GigabitEthernet0/0/0.100:
+    description: "VLAN 100 - Internal"
+    enabled: true
+
+# Loopback interfaces
+loopbacks:
+  loop0:
+    description: "Loopback 0 - System"
+    enabled: true
+  
+  loop1:
+    description: "Loopback 1 - Backup"
+    enabled: true
+
+# VXLAN Tunnels (if configured)
+vxlan_tunnels:
+  vxlan_tunnel0:
+    description: "VXLAN Tunnel to DC1"
+    remote: "10.0.0.1"
+    vni: 100
+    enabled: true
+
+# TAP interfaces (Linux Control Plane)
+taps:
+  tap0:
+    description: "TAP for management"
+    enabled: true
+  
+  tap1:
+    description: "TAP for data plane"
+    enabled: true
+
+# Agent behavior
+agent:
+  # Log level: DEBUG, INFO, WARNING, ERROR
+  log_level: INFO
+  
+  # Enable structured logging
+  structured_logging: false
+  
+  # Monitoring
+  monitoring:
+    enabled: true
+    # Send health status via syslog
+    syslog: false
+
+# VPP Configuration
+vpp:
+  # API timeout (seconds)
+  api_timeout: 5
+  
+  # Stats polling timeout (seconds)  
+  stats_timeout: 5
+  
+  # VPP stats segment socket
+  stats_socket: "/run/vpp/stats.sock"
+  
+  # VPP API socket
+  api_socket: "/run/vpp/api.sock"
+
+# SNMP Configuration
+snmp:
+  # Community string (if needed for security)
+  community: "public"
+  
+  # Trap settings
+  traps:
+    enabled: false
+    # Trap sink: 192.168.1.1:162
+    sink: null
+    
+    # Generate trap on
+    interface_down: false
+    interface_up: false
+    error_threshold: 100  # % packet loss
+    
+  # SNMP version
+  version: "2c"
+
+# Polling configuration
+polling:
+  # Poll interval in seconds (5 is recommended for smooth graphs)
+  # Increase for less CPU usage, decrease for more responsiveness
+  interval: 5
+  
+  # Reconnection backoff (seconds)
+  reconnect_backoff: 2
+  
+  # Max consecutive errors before reconnect
+  max_errors: 3
+
+# Performance tuning
+performance:
+  # Number of worker threads (usually 1 is fine)
+  workers: 1
+  
+  # Queue size for pending requests
+  queue_size: 100
+  
+  # Cache timeout (don't change unless needed)
+  cache_ttl: 1

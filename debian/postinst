@@ -1,0 +1,66 @@
+#!/bin/bash
+
+# Post-installation script for vpp-snmp-agent-v2
+
+echo "Installing VPP SNMP Agent V2..."
+
+# Make wrapper executable
+if [ -f /usr/bin/snmp-agent-v2 ]; then
+    chmod 755 /usr/bin/snmp-agent-v2
+fi
+
+# Make agent module executable
+if [ -f /usr/share/vpp-snmp-agent/snmp_agent_integrated.py ]; then
+    chmod 644 /usr/share/vpp-snmp-agent/snmp_agent_integrated.py
+fi
+
+# Create vpp user if it doesn't exist (usually exists from VPP package)
+if ! id -u vpp > /dev/null 2>&1; then
+    echo "Creating vpp user..."
+    useradd -r -s /bin/false -m vpp 2>/dev/null || true
+else
+    echo "VPP user already exists"
+fi
+
+# Create directory for agent if needed
+mkdir -p /opt/vpp-snmp-agent 2>/dev/null || true
+if id -u vpp > /dev/null 2>&1; then
+    chown vpp:vpp /opt/vpp-snmp-agent 2>/dev/null || true
+fi
+chmod 755 /opt/vpp-snmp-agent 2>/dev/null || true
+
+# Create log directory
+mkdir -p /var/log/vpp-snmp-agent 2>/dev/null || true
+if id -u vpp > /dev/null 2>&1; then
+    chown vpp:vpp /var/log/vpp-snmp-agent 2>/dev/null || true
+fi
+chmod 755 /var/log/vpp-snmp-agent 2>/dev/null || true
+
+# Enable systemd service
+systemctl daemon-reload 2>/dev/null || true
+systemctl enable vpp-snmp-agent 2>/dev/null || true
+
+echo ""
+echo "✓ Installation complete!"
+echo ""
+
+echo ""
+echo "✓ Installation complete!"
+echo ""
+echo "Quick Start:"
+echo "  1. Review configuration (optional):"
+echo "     cat /etc/vpp-snmp-agent/config.yaml"
+echo ""
+echo "  2. Start the service:"
+echo "     sudo systemctl start vpp-snmp-agent"
+echo ""
+echo "  3. Check status:"
+echo "     sudo systemctl status vpp-snmp-agent"
+echo ""
+echo "  4. View logs:"
+echo "     sudo journalctl -u vpp-snmp-agent -f"
+echo ""
+echo "Documentation:"
+echo "  /usr/share/doc/vpp-snmp-agent-v2/SOLUTION.md"
+echo "  /usr/share/doc/vpp-snmp-agent-v2/IMPROVEMENTS.md"
+echo ""

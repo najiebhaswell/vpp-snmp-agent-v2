@@ -1,0 +1,10 @@
+#!/bin/bash
+set -e
+
+# Pre-removal script
+
+# Stop the service before removing
+systemctl stop vpp-snmp-agent || true
+systemctl disable vpp-snmp-agent || true
+
+echo "VPP SNMP Agent stopped."

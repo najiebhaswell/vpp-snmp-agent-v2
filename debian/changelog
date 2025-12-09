@@ -1,0 +1,12 @@
+vpp-snmp-agent-v2 (2.1.0) stable; urgency=medium
+
+  * Critical fix: Bonding interface speed aggregation
+  * Fix case-insensitive interface name matching (BondEthernet0)
+  * Correct speed calculation: sum of all active member speeds
+  * Multi-strategy member detection (attribute, naming, fallback)
+  * Debug logging for interface detection and aggregation
+  * Support for LACP bonding with dynamic member failover
+  * Verified with 2x100Gbps HundredGigabit Ethernet ports
+  * SNMP OID 1.3.6.1.2.1.31.1.1.1.15.N correctly reports aggregate speed
+
+ -- VPP Team <vpp@example.com>  Mon, 09 Dec 2024 12:00:00 +0000

@@ -1,0 +1,26 @@
+[Unit]
+Description=VPP SNMP Agent V2 - Real-time Monitoring
+Documentation=man:vpp-snmp-agent(1)
+After=network.target vpp.service
+Wants=snmpd.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStart=/usr/bin/snmp-agent-v2 -a localhost:705 -p 5 -t 5
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=vpp-snmp-agent
+
+# Security settings
+NoNewPrivileges=false
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/log/vpp-snmp-agent /run/vpp /usr/share/vpp-snmp-agent
+
+[Install]
+WantedBy=multi-user.target

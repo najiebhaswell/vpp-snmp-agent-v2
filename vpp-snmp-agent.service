@@ -1,0 +1,17 @@
+[Unit]
+Description=SNMP AgentX Daemon for VPP dataplane statistics
+After=network.target
+ConditionPathExists=/etc/snmp/snmpd.conf
+
+[Service]
+Type=simple
+NetworkNamespacePath=/var/run/netns/dataplane
+ExecStart=/usr/sbin/vpp-snmp-agent -a localhost:705 -p 30 -c /etc/vpp/vpp-snmp-agent.yaml
+User=Debian-snmp
+Group=vpp
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
