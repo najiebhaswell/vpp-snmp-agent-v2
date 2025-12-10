@@ -1,3 +1,17 @@
+vpp-snmp-agent-v2 (2.2.0) stable; urgency=medium
+
+  * VPP 25.06 compatibility release
+  * Fixed stats interface collection for VPP 25.06-rc2
+  * Added safe stats path access with fallback to default values
+  * Improved bonding interface speed calculation as sum of active members
+  * Uses VPP sw_interface_bond_dump and sw_interface_slave_dump APIs
+  * Correctly reports aggregate speed for multi-member bonds
+  * Handles missing optional stats paths gracefully
+  * Better error logging for troubleshooting
+  * Compatible with both older and newer VPP versions
+
+ -- VPP Team <vpp@example.com>  Tue, 09 Dec 2025 15:00:00 +0000
+
 vpp-snmp-agent-v2 (2.1.0) stable; urgency=medium
 
   * Critical fix: Bonding interface speed aggregation

@@ -1,0 +1,133 @@
+╔═══════════════════════════════════════════════════════════════════════════════╗
+║                                                                               ║
+║                  VPP SNMP AGENT V2 - QUICK START GUIDE                       ║
+║                         Version 2.2.0 (VPP 25.06)                            ║
+║                                                                               ║
+╚═══════════════════════════════════════════════════════════════════════════════╝
+
+📋 WHAT'S INCLUDED
+═════════════════════════════════════════════════════════════════════════════════
+
+✓ Production-ready SNMP agent for VPP 25.06
+✓ Async data collection with background polling
+✓ Smart bonding interface speed aggregation
+✓ Systemd service integration
+✓ Complete documentation and examples
+
+🚀 QUICK START (3 STEPS)
+═════════════════════════════════════════════════════════════════════════════════
+
+STEP 1: Install the agent
+────────────────────────
+$ sudo dpkg -i vpp-snmp-agent-v2_2.2.0_all.deb
+
+STEP 2: Start the service
+────────────────────────
+$ sudo systemctl start vpp-snmp-agent
+$ sudo systemctl enable vpp-snmp-agent  # Auto-start on boot
+
+STEP 3: Verify installation
+───────────────────────────
+$ snmpget -v2c -c public localhost:705 1.3.6.1.2.1.2.2.1.2.1000
+
+Expected output:
+  iso.org.doj.internet.mgmt.mib-2.interfaces.ifTable.ifEntry.ifName.1000 = 
+    STRING: "local0"
+
+
+⚙️ CONFIGURATION
+═════════════════════════════════════════════════════════════════════════════════
+
+Config file: /etc/vpp-snmp-agent/vpp-snmp-agent-config.yaml
+
+Default settings:
+  - Polling period: 5 seconds (adjustable)
+  - SNMP address: localhost:705
+  - User: vpp (group: vpp)
+
+Edit config and restart:
+$ sudo nano /etc/vpp-snmp-agent/vpp-snmp-agent-config.yaml
+$ sudo systemctl restart vpp-snmp-agent
+
+
+📊 MONITORING YOUR INTERFACES
+═════════════════════════════════════════════════════════════════════════════════
+
+1. List all interfaces:
+   $ snmpwalk -v2c -c public localhost:705 1.3.6.1.2.1.2.2.1.2
+
+2. Check bonding interface speed (sum of member speeds):
+   $ snmpget -v2c -c public localhost:705 1.3.6.1.2.1.31.1.1.1.15.1000
+
+3. View TX/RX bytes:
+   $ snmpget -v2c -c public localhost:705 1.3.6.1.2.1.31.1.1.1.6.1000  # RX octets
+   $ snmpget -v2c -c public localhost:705 1.3.6.1.2.1.31.1.1.1.10.1000 # TX octets
+
+
+🔍 TROUBLESHOOTING
+═════════════════════════════════════════════════════════════════════════════════
+
+Check agent status:
+  $ sudo systemctl status vpp-snmp-agent
+
+View logs:
+  $ sudo journalctl -u vpp-snmp-agent -f
+
+Debug mode (verbose):
+  $ sudo python3 /usr/share/vpp-snmp-agent/snmp_agent_integrated.py -d -p 5
+
+Verify VPP connectivity:
+  $ python3 -c "from vppstats import VPPStats; s=VPPStats(); s.connect(); 
+               print('Connected'); s.disconnect()"
+
+
+✅ BONDING INTERFACE SUPPORT
+═════════════════════════════════════════════════════════════════════════════════
+
+The agent now correctly reports bonding interface speeds as the SUM of all 
+active member speeds. For example:
+
+  Bond with 2x 100 Gbps members = 200 Gbps reported in SNMP
+
+This is done by:
+  1. Querying VPP sw_interface_bond_dump for bond info
+  2. Querying sw_interface_slave_dump for member details
+  3. Summing speeds of all active (non-down) members
+  4. Reporting aggregate speed in SNMP OID 1.3.6.1.2.1.31.1.1.1.15
+
+
+🔗 SNMP INTEGRATION
+═════════════════════════════════════════════════════════════════════════════════
+
+Make sure snmpd is configured to use AgentX:
+
+/etc/snmp/snmpd.conf should contain:
+  master  agentx
+  agentXSocket tcp:localhost:705
+
+Then restart snmpd:
+  $ sudo systemctl restart snmpd
+
+
+📚 DOCUMENTATION
+═════════════════════════════════════════════════════════════════════════════════
+
+For detailed information, see:
+  - DEPLOYMENT_CHECKLIST.md  - Step-by-step deployment guide
+  - SOLUTION.md              - Problem analysis and solutions
+  - IMPROVEMENTS.md          - Technical deep-dive
+  - README.md                - Overall documentation
+
+
+🆘 NEED HELP?
+═════════════════════════════════════════════════════════════════════════════════
+
+1. Read DEPLOYMENT_CHECKLIST.md (comprehensive guide)
+2. Check agent logs: sudo journalctl -u vpp-snmp-agent
+3. Test SNMP connectivity with debug output
+4. Verify VPP is running: vppctl show version
+
+
+═════════════════════════════════════════════════════════════════════════════════
+Version 2.2.0 | December 9, 2025 | Compatible with VPP 25.06+
+═════════════════════════════════════════════════════════════════════════════════

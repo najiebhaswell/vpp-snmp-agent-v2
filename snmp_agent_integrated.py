@@ -23,12 +23,17 @@ except ImportError as e:
     sys.exit(1)
 
 
-def get_interface_speed(ifname, ifaces, logger=None):
+def get_interface_speed(ifname, ifaces, bond_members_map=None, logger=None):
     """
     Get interface speed with special handling for bonding interfaces.
-    For bonding interfaces that have no direct link_speed, 
-    derive speed from member interfaces.
+    For bonding interfaces, speed = SUM of active member speeds.
     Returns speed in Kbps (as stored in VPP)
+    
+    Args:
+        ifname: Interface name
+        ifaces: Dictionary of interfaces from VPP API
+        bond_members_map: Dict mapping bond sw_if_index to list of member sw_if_indices
+        logger: Logger instance
     """
     if ifname.startswith("loop") or ifname.startswith("tap"):
         return 1000000  # 1 Gbps in Kbps for loopback/tap
@@ -40,41 +45,66 @@ def get_interface_speed(ifname, ifaces, logger=None):
     
     iface = ifaces[ifname]
     
-    # If interface has direct link_speed, use it
+    # If interface has direct link_speed, use it (for regular interfaces)
     if iface.link_speed > 0:
         return iface.link_speed
     
-    # For bonding interfaces (bond0, bond1, etc.) with zero speed,
-    # try to derive speed from member interfaces
-    if ifname.startswith("bond"):
-        # Get all member interface speeds
-        member_speeds = []
-        for other_ifname, other_iface in ifaces.items():
-            # Check if this interface is a member of the bond
-            # VPP bonding members typically have the bond as their parent
-            # We look for interfaces where bond is in the name or by checking hierarchy
-            try:
-                # Try to get member info from VPP data structures
-                if hasattr(other_iface, 'bond_interface') and other_iface.bond_interface == iface.sw_if_index:
-                    if other_iface.link_speed > 0:
-                        member_speeds.append(other_iface.link_speed)
-                # Alternative: check if interface name starts with bond prefix
-                elif other_ifname.startswith(ifname + ".") or other_ifname.startswith(ifname + "-"):
-                    if other_iface.link_speed > 0:
-                        member_speeds.append(other_iface.link_speed)
-            except:
-                pass
+    # For bonding interfaces (BondEthernet0, BondEthernet1, etc.) with zero speed,
+    # derive speed as SUM of active member interfaces
+    if iface.interface_dev_type == "bond" and iface.sw_if_index == iface.sup_sw_if_index:
+        total_speed = 0
         
-        # If we found member speeds, use the first one (all members should be same)
-        if member_speeds:
+        # Use pre-computed bond members map if available
+        if bond_members_map and iface.sw_if_index in bond_members_map:
+            member_speeds = []
+            for member_sw_if_index in bond_members_map[iface.sw_if_index]:
+                # Find interface by sw_if_index
+                for other_ifname, other_iface in ifaces.items():
+                    if other_iface.sw_if_index == member_sw_if_index:
+                        if other_iface.link_speed > 0:
+                            member_speeds.append(other_iface.link_speed)
+                        break
+            
+            if member_speeds:
+                total_speed = sum(member_speeds)
+                if logger:
+                    logger.debug(f"Bond {ifname}: {len(member_speeds)} active members, "
+                                f"total speed={total_speed/1000000:.0f} Gbps "
+                                f"(members: {[f'{s/1000000:.0f}Gbps' for s in member_speeds]})")
+                return total_speed
+        
+        # Fallback: try to calculate from all members if bond_members_map not available
+        # This is less efficient but ensures it works
+        try:
+            member_speeds = []
+            for other_ifname, other_iface in ifaces.items():
+                if other_iface.interface_dev_type != "bond" and other_iface.sup_sw_if_index == iface.sw_if_index:
+                    if other_iface.link_speed > 0:
+                        member_speeds.append(other_iface.link_speed)
+            
+            if member_speeds:
+                total_speed = sum(member_speeds)
+                if logger:
+                    logger.debug(f"Bond {ifname}: calculated from members, "
+                                f"total speed={total_speed/1000000:.0f} Gbps")
+                return total_speed
+        except Exception as e:
             if logger:
-                logger.debug(f"Bonding interface {ifname} member speeds: {member_speeds}")
-            return member_speeds[0]
+                logger.debug(f"Could not calculate bond speed from members: {e}")
         
-        # If still no speed found, default to 1 Gbps
+        # If still no speed found, check flags for admin/link status
+        # If up, default to 1 Gbps per active member
+        try:
+            if iface.flags & 1:  # Admin up
+                if logger:
+                    logger.warning(f"Bond {ifname} is admin up but has no member speed info, defaulting to 1 Gbps")
+                return 1000000  # Default 1 Gbps in Kbps
+        except:
+            pass
+        
         if logger:
-            logger.warning(f"Bonding interface {ifname} has no member with speed, defaulting to 1 Gbps")
-        return 1000000  # Default 1 Gbps in Kbps
+            logger.warning(f"Bond {ifname} has no member speeds, defaulting to 0 Kbps")
+        return 0
     
     return 0
 
@@ -201,10 +231,86 @@ class VPPDataCollector:
                 pass
             self.vpp_stats = None
     
+    def _safe_get_stat(self, path, index, method='sum', default=0):
+        """
+        Safely get a stat, return default if path doesn't exist
+        VPP 25.06 compatibility helper
+        
+        Args:
+            path: Stats path (e.g., "/if/rx-error")
+            index: Interface index
+            method: Aggregation method ('sum', 'sum_packets', 'sum_octets')
+            default: Default value if stat doesn't exist
+        
+        Returns:
+            Stat value or default
+        """
+        try:
+            if path not in self.vpp_stats.directory:
+                self.logger.debug(f"Stats path {path} not available, using default {default}")
+                return default
+            
+            stat = self.vpp_stats[path][:, index]
+            
+            if method == 'sum':
+                return stat.sum()
+            elif method == 'sum_packets':
+                return stat.sum_packets()
+            elif method == 'sum_octets':
+                return stat.sum_octets()
+            else:
+                return stat.sum()
+                
+        except Exception as e:
+            self.logger.debug(f"Error accessing {path} for interface {index}: {e}")
+            return default
+    
+    def _get_bond_members_map(self, interfaces):
+        """
+        Build a map of bond interface sw_if_index to list of member sw_if_indices.
+        Uses VPP sw_interface_bond_dump and sw_interface_slave_dump APIs.
+        
+        Returns:
+            Dict mapping bond sw_if_index to list of member sw_if_indices
+        """
+        bond_members = {}
+        try:
+            # Try to get bond info via API
+            if not hasattr(self.vpp_api.vpp, 'api'):
+                return bond_members
+            
+            result = self.vpp_api.vpp.api.sw_interface_bond_dump()
+            if result:
+                for bond_info in result:
+                    bond_sw_if_index = bond_info.sw_if_index
+                    members = []
+                    
+                    try:
+                        # Get slave members for this bond
+                        slaves = self.vpp_api.vpp.api.sw_interface_slave_dump(sw_if_index=bond_sw_if_index)
+                        if slaves:
+                            for slave_info in slaves:
+                                members.append(slave_info.sw_if_index)
+                    except Exception as e:
+                        self.logger.debug(f"Could not get slaves for bond {bond_sw_if_index}: {e}")
+                    
+                    bond_members[bond_sw_if_index] = members
+                    self.logger.debug(f"Bond sw_if_index={bond_sw_if_index} has {len(members)} members")
+        except Exception as e:
+            self.logger.debug(f"Could not get bond members: {e}")
+        
+        return bond_members
+    
     def _collect_data(self):
-        """Collect data from VPP"""
+        """
+        Collect data from VPP
+        VPP 25.06 compatible - handles missing optional stats paths
+        """
         interfaces = self.vpp_api.get_ifaces()
         lcps = self.vpp_api.get_lcp()
+        
+        # Get bond members map for speed calculation
+        bond_members_map = self._get_bond_members_map(interfaces)
         
         # Get stats from shared memory
         iface_stats = {}
@@ -213,24 +319,25 @@ class VPPDataCollector:
         for i, ifname in enumerate(iface_names):
             try:
                 stats = {
-                    'rx_packets': self.vpp_stats["/if/rx"][:, i].sum_packets(),
-                    'rx_octets': self.vpp_stats["/if/rx"][:, i].sum_octets(),
-                    'rx_errors': self.vpp_stats["/if/rx-error"][:, i].sum(),
-                    'rx_no_buf': self.vpp_stats["/if/rx-no-buf"][:, i].sum(),
-                    'rx_multicast': self.vpp_stats["/if/rx-multicast"][:, i].sum_packets(),
-                    'rx_broadcast': self.vpp_stats["/if/rx-broadcast"][:, i].sum_packets(),
+                    'rx_packets': self._safe_get_stat("/if/rx", i, method='sum_packets', default=0),
+                    'rx_octets': self._safe_get_stat("/if/rx", i, method='sum_octets', default=0),
+                    'rx_errors': self._safe_get_stat("/if/rx-error", i, method='sum', default=0),
+                    'rx_no_buf': self._safe_get_stat("/if/rx-no-buf", i, method='sum', default=0),
+                    'rx_multicast': self._safe_get_stat("/if/rx-multicast", i, method='sum_packets', default=0),
+                    'rx_broadcast': self._safe_get_stat("/if/rx-broadcast", i, method='sum_packets', default=0),
                     
-                    'tx_packets': self.vpp_stats["/if/tx"][:, i].sum_packets(),
-                    'tx_octets': self.vpp_stats["/if/tx"][:, i].sum_octets(),
-                    'tx_errors': self.vpp_stats["/if/tx-error"][:, i].sum(),
-                    'tx_multicast': self.vpp_stats["/if/tx-multicast"][:, i].sum_packets(),
-                    'tx_broadcast': self.vpp_stats["/if/tx-broadcast"][:, i].sum_packets(),
-                    'drops': self.vpp_stats["/if/drops"][:, i].sum(),
+                    'tx_packets': self._safe_get_stat("/if/tx", i, method='sum_packets', default=0),
+                    'tx_octets': self._safe_get_stat("/if/tx", i, method='sum_octets', default=0),
+                    'tx_errors': self._safe_get_stat("/if/tx-error", i, method='sum', default=0),
+                    'tx_multicast': self._safe_get_stat("/if/tx-multicast", i, method='sum_packets', default=0),
+                    'tx_broadcast': self._safe_get_stat("/if/tx-broadcast", i, method='sum_packets', default=0),
+                    'drops': self._safe_get_stat("/if/drops", i, method='sum', default=0),
+                    'punts': self._safe_get_stat("/if/punts", i, method='sum', default=0),
                     'timestamp': time.time(),
                 }
                 iface_stats[ifname] = stats
             except Exception as e:
-                self.logger.debug(f"Could not get stats for {ifname}: {e}")
+                self.logger.warning(f"Could not get stats for {ifname}: {e}")
         
         # Update data atomically
         with self._lock:
@@ -306,11 +413,14 @@ class SNMPAgentIntegrated(agentx.Agent):
                 self.logger.warning("No interface data available")
                 return ds
             
+            # Build bond members map for speed calculation
+            interfaces = data['interfaces']
+            bond_members_map = self.collector._get_bond_members_map(interfaces)
+            
             # Build MIB data for each interface
             for i, ifname in enumerate(data['iface_names']):
                 idx = 1000 + i  # Interface index in SNMP
                 stats = data['iface_stats'].get(ifname, {})
-                interfaces = data['interfaces']
                 
                 # Get interface metadata
                 iface = interfaces.get(ifname)
@@ -320,12 +430,9 @@ class SNMPAgentIntegrated(agentx.Agent):
                 mac = str(iface.l2_address) if iface else "00:00:00:00:00:00"
                 
                 # Speed in bps (VPP reports link_speed in Kbps)
-                if ifname.startswith("loop") or ifname.startswith("tap"):
-                    speed = 1000000000  # Default 1 Gbps for loopback/tap
-                elif iface and iface.link_speed > 0:
-                    speed = iface.link_speed * 1000  # Convert Kbps to bps
-                else:
-                    speed = 0
+                # Use improved get_interface_speed for bonding support
+                speed_kbps = get_interface_speed(ifname, interfaces, bond_members_map, self.logger)
+                speed = speed_kbps * 1000  # Convert Kbps to bps
                 
                 # For OID 1.3.6.1.2.1.2.2.1.5 (32-bit ifSpeed), cap at 4.29 Gbps
                 # For speeds > 4.29 Gbps, use 0 to indicate use HC counter

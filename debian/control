@@ -6,13 +6,15 @@ Priority: optional
 
 Package: vpp-snmp-agent-v2
 Architecture: all
-Depends: python3 (>= 3.6), python3-yaml, vpp (>= 20.05), snmpd
+Depends: python3 (>= 3.6), python3-yaml, vpp (>= 25.06), snmpd
 Suggests: grafana, prometheus
 Description: VPP SNMP Agent V2 - Real-time Monitoring Agent
  An improved SNMP agent for VPP (Vector Packet Processing) that provides
  real-time monitoring of interfaces and traffic statistics.
  .
  Features:
+  - Compatible with VPP 25.06 and later
+  - Accurate bonding interface speed aggregation (sum of member speeds)
   - 6x faster polling (5 second default vs 30 second original)
   - 10x more reliable timeout handling (1.0s vs 0.1s)
   - Smooth, continuous monitoring graphs
